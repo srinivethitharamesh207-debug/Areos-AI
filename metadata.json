@@ -1,0 +1,6 @@
+{
+  "name": "Areos",
+  "description": "Areos Hybrid Quantum AI Market Intelligence & Portfolio Platform",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
