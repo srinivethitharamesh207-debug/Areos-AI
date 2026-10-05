@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-[#05070A]">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>Areos AI — Institutional Market Intelligence</title>
+  
+  <!-- PWA & Mobile Meta Tags -->
+  <meta name="theme-color" content="#080B10">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Areos AI">
+  <meta name="mobile-web-app-capable" content="yes">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="apple-touch-icon" href="/icons/icon-192.png">
+  <link rel="icon" type="image/png" href="/icons/icon-192.png">
+
+  <!-- Inter & JetBrains Mono Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- Phosphor Icons (Regular, Fill & Bold) -->
+  <link rel="stylesheet" type="text/css" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css" />
+  <link rel="stylesheet" type="text/css" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/fill/style.css" />
+  <link rel="stylesheet" type="text/css" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/bold/style.css" />
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
+            mono: ['"JetBrains Mono"', 'monospace'],
+          },
+          colors: {
+            obsidian: {
+              bg: '#080B10',
+              sidebar: '#0D1117',
+              card: '#11161D',
+              hover: '#161D26',
+              border: '#202A35',
+              cyan: '#22D3EE',
+              brightCyan: '#67E8F9',
+              aiPurple: '#A78BFA',
+              positive: '#34D399',
+              negative: '#FB7185',
+              warning: '#FBBF24',
+              textPrimary: '#F8FAFC',
+              textSecondary: '#94A3B8',
+            }
+          },
+          keyframes: {
+            fadeIn: {
+              '0%': { opacity: '0', transform: 'translateY(4px)' },
+              '100%': { opacity: '1', transform: 'translateY(0)' },
+            }
+          },
+          animation: {
+            fadeIn: 'fadeIn 0.2s ease-out forwards',
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    /* Minimal Precision Scrollbar */
+    ::-webkit-scrollbar {
+      width: 4px;
+      height: 4px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #080B10;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #202A35;
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #334155;
+    }
+
+    /* Hide scrollbars for pill chips */
+    .no-scrollbar::-webkit-scrollbar {
+      display: none;
+    }
+    .no-scrollbar {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
+
+    /* Active Tap Highlight */
+    button, a {
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      * {
+        animation-duration: 0.01ms !important;
+        transition-duration: 0.01ms !important;
+      }
+    }
+  </style>
+</head>
+
+<body class="bg-[#05070A] text-obsidian-textPrimary font-sans antialiased overflow-hidden h-full selection:bg-obsidian-cyan selection:text-black">
+
+  <!-- DESKTOP BACKDROP WRAPPER (App centered max 430px on dark backdrop) -->
+  <div class="h-full w-full flex items-center justify-center bg-[#05070A] relative sm:p-0 md:py-3 lg:py-4">
+    
+    <!-- MOBILE PHONE-WIDTH APP CONTAINER (max ~430px) -->
+    <div id="appContainer" class="w-full sm:max-w-[430px] h-[100dvh] bg-obsidian-bg relative flex flex-col overflow-hidden shadow-[0_0_60px_rgba(0,0,0,0.85)] sm:border-x sm:border-obsidian-border/50">
+      
+      <!-- 1. COMPACT TOP APP HEADER -->
+      <div id="appHeaderContainer" class="flex-shrink-0 z-30"></div>
+
+      <!-- 2. SCROLLABLE PAGE VIEW CONTAINER -->
+      <main id="pageScrollContainer" class="flex-1 overflow-y-auto px-4 py-3 bg-obsidian-bg relative min-h-0">
+        <div id="pageContent" class="min-h-full"></div>
+      </main>
+
+      <!-- 3. FIXED BOTTOM TAB BAR -->
+      <div id="bottomTabBarContainer" class="flex-shrink-0 z-40"></div>
+
+      <!-- 4. MORE BOTTOM SHEET MOUNT -->
+      <div id="moreSheetContainer"></div>
+
+      <!-- 5. FULL-SCREEN SEARCH SHEET MOUNT -->
+      <div id="searchSheetContainer"></div>
+
+      <!-- 6. GLOBAL TOAST MOUNT -->
+      <div id="toastContainer"></div>
+
+    </div>
+  </div>
+
+  <!-- Application Entry Point JS -->
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
