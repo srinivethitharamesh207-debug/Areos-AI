@@ -1,20 +1,24 @@
-// src/pages/AIIntelligencePage.js – Claude Home Screen Style Full-Screen AI Intelligence
+// src/pages/AIIntelligencePage.js – Full-Screen AI Intelligence Assistant
+// Powered by real SSE backend streaming, function calling tools, and dynamic suggestions.
 
 import { parseMarkdown } from '../utils/markdown.js';
 import { sendMessage } from '../services/chatService.js';
 import { Toast } from '../components/Toast.js';
 
-const STORAGE_CONVERSATIONS_KEY = 'areos_ai_conversations_v2';
-const STORAGE_ACTIVE_ID_KEY = 'areos_ai_active_conv_id_v2';
+const STORAGE_CONVERSATIONS_KEY = 'areos_ai_conversations_v3';
+const STORAGE_ACTIVE_ID_KEY = 'areos_ai_active_conv_id_v3';
 
 export const AIIntelligencePage = {
   currentTab: 'chat', // 'chat' | 'insights'
   conversations: [],
   activeConversationId: null,
   isReplying: false,
+  activeStatusMessage: null, // e.g. "Using portfolio data..."
   abortController: null,
-  attachedFiles: [],
+  attachedFiles: [], // array of { name, size, mimeType, base64 }
   historyFilter: '',
+  recognition: null,
+  isRecordingVoice: false,
 
   // Generate unique conversation ID
   generateId() {
@@ -48,7 +52,7 @@ export const AIIntelligencePage = {
       } else {
         this.conversations = [];
       }
-    } catch (e) {
+    } catch {
       this.conversations = [];
     }
 
@@ -89,6 +93,7 @@ export const AIIntelligencePage = {
     this.conversations.unshift(newConv);
     this.activeConversationId = newConv.id;
     this.attachedFiles = [];
+    this.activeStatusMessage = null;
     this.saveConversations();
     this.currentTab = 'chat';
     this.renderActiveView();
@@ -98,55 +103,76 @@ export const AIIntelligencePage = {
   // Time-based greeting helper
   getGreeting() {
     const hour = new Date().getHours();
-    if (hour < 12) return 'Good morning, Alexander';
-    if (hour < 18) return 'Good afternoon, Alexander';
-    return 'Good evening, Alexander';
+    if (hour < 12) return 'Good morning';
+    if (hour < 17) return 'Good afternoon';
+    return 'Good evening';
   },
 
+  // Top Full Screen Container Render
   render() {
     return `
-    <div id="aiIntelligenceRoot" class="flex flex-col h-full w-full relative overflow-hidden bg-obsidian-bg">
+    <div class="relative flex flex-col h-[calc(100vh-60px)] min-h-0 bg-obsidian-bg text-obsidian-textPrimary select-none overflow-hidden font-sans">
       
-      <!-- SEGMENTED CONTROL: [ Chat | Insights ] -->
-      <div class="px-4 py-2 bg-obsidian-bg/80 backdrop-blur-sm border-b border-obsidian-border/40 flex items-center justify-center flex-shrink-0 z-10">
-        <div class="inline-flex p-0.5 rounded-xl bg-obsidian-card border border-obsidian-border text-xs font-medium select-none shadow-inner">
-          <button id="tabSegmentChat" class="px-4 py-1 rounded-lg ${this.currentTab === 'chat' ? 'bg-obsidian-bg text-obsidian-cyan shadow-sm border border-obsidian-border' : 'text-obsidian-textSecondary hover:text-obsidian-textPrimary'} transition-all">
+      <!-- Top Action Bar inside AI Page -->
+      <div class="flex items-center justify-between px-3 py-2 border-b border-obsidian-border bg-obsidian-card/40 backdrop-blur-md z-20 flex-shrink-0">
+        <!-- Left: History Drawer Button -->
+        <button id="btnOpenHistoryDrawer" class="min-h-[38px] px-2.5 rounded-xl bg-obsidian-card border border-obsidian-border text-obsidian-textSecondary hover:text-obsidian-textPrimary hover:border-obsidian-cyan/40 text-xs font-sans flex items-center space-x-1.5 active:scale-95 transition-all" title="View conversation history">
+          <i class="ph ph-clock-counter-clockwise text-base text-obsidian-cyan"></i>
+          <span class="font-medium text-xs hidden sm:inline">History</span>
+        </button>
+
+        <!-- Center: Segmented Control Tabs (Chat vs Insights) -->
+        <div class="flex items-center bg-obsidian-card p-1 rounded-xl border border-obsidian-border text-xs font-medium">
+          <button id="tabSegmentChat" class="px-3.5 py-1 rounded-lg bg-obsidian-bg text-obsidian-cyan shadow-sm border border-obsidian-border transition-all">
             Chat
           </button>
-          <button id="tabSegmentInsights" class="px-4 py-1 rounded-lg ${this.currentTab === 'insights' ? 'bg-obsidian-bg text-obsidian-cyan shadow-sm border border-obsidian-border' : 'text-obsidian-textSecondary hover:text-obsidian-textPrimary'} transition-all">
+          <button id="tabSegmentInsights" class="px-3.5 py-1 rounded-lg text-obsidian-textSecondary hover:text-obsidian-textPrimary transition-all">
             Insights
           </button>
         </div>
+
+        <!-- Right: New Chat Button -->
+        <button id="btnHeaderNewChat" class="min-h-[38px] px-2.5 rounded-xl bg-obsidian-card border border-obsidian-border text-obsidian-textSecondary hover:text-obsidian-textPrimary hover:border-obsidian-cyan/40 text-xs font-sans flex items-center space-x-1.5 active:scale-95 transition-all" title="Start a fresh chat">
+          <i class="ph ph-plus text-base text-obsidian-aiPurple"></i>
+          <span class="font-medium text-xs hidden sm:inline">New Chat</span>
+        </button>
       </div>
 
-      <!-- MAIN CONTENT VIEW CONTAINER -->
-      <div class="flex-1 relative overflow-hidden flex flex-col min-h-0">
+      <!-- Main Content Area: Chat Section OR Insights Section -->
+      <div class="relative flex-1 flex flex-col min-h-0 overflow-hidden">
         
-        <!-- 1. CHAT CONTAINER VIEW -->
-        <div id="viewChatSection" class="${this.currentTab === 'chat' ? 'flex' : 'hidden'} flex-col flex-1 h-full min-h-0 relative">
+        <!-- 1. CHAT FULL-SCREEN VIEW -->
+        <div id="viewChatSection" class="${this.currentTab === 'chat' ? 'flex' : 'hidden'} flex-col flex-1 h-full min-h-0">
           
-          <!-- SCROLLABLE CHAT CONTENT (WELCOME SCREEN OR CONVERSATION) -->
-          <div id="aiScrollArea" class="flex-1 overflow-y-auto px-4 py-4 space-y-4 min-h-0">
-            <!-- Dynamically populated -->
+          <!-- Scrollable Messages Container -->
+          <div id="aiScrollArea" class="flex-1 overflow-y-auto px-3 sm:px-4 py-4 space-y-3 min-h-0 scroll-smooth">
+            <!-- Messages rendered dynamically -->
           </div>
 
-          <!-- FLOATING SCROLL TO BOTTOM BUTTON -->
-          <button id="btnScrollToBottom" class="hidden absolute right-4 bottom-36 w-9 h-9 rounded-full bg-obsidian-card border border-obsidian-border text-obsidian-cyan shadow-xl flex items-center justify-center hover:bg-obsidian-hover active:scale-95 transition-all z-20" title="Scroll to latest message">
-            <i class="ph ph-caret-down text-lg"></i>
-          </button>
+          <!-- Scroll-to-bottom Floating Button -->
+          <div class="relative flex justify-center pointer-events-none">
+            <button id="btnScrollToBottom" class="hidden pointer-events-auto absolute -top-12 px-3 py-1.5 rounded-full bg-obsidian-card/90 border border-obsidian-cyan/50 text-obsidian-cyan shadow-xl text-xs font-mono flex items-center space-x-1.5 backdrop-blur-md active:scale-95 transition-all">
+              <i class="ph ph-arrow-down text-sm"></i>
+              <span>Latest</span>
+            </button>
+          </div>
 
-          <!-- FLOATING CLAUDE-STYLE CHAT INPUT -->
-          <div id="aiInputDock" class="flex-shrink-0 p-3 sm:p-4 bg-gradient-to-t from-obsidian-bg via-obsidian-bg/95 to-transparent pb-[max(0.75rem,env(safe-area-inset-bottom))] z-20">
-            <div id="aiInputCard" class="w-full bg-obsidian-card border border-obsidian-border rounded-2xl sm:rounded-3xl p-3 shadow-2xl transition-all focus-within:border-obsidian-cyan focus-within:ring-1 focus-within:ring-obsidian-cyan/30">
+          <!-- Bottom Chat Input Dock -->
+          <div id="aiInputDock" class="flex-shrink-0 px-3 pb-3 pt-2 bg-gradient-to-t from-obsidian-bg via-obsidian-bg/95 to-transparent z-10 transition-transform duration-200">
+            
+            <!-- Attached Files Preview Chips Container -->
+            <div id="attachedFilesContainer" class="hidden flex flex-wrap gap-1.5 mb-2 px-1">
+              <!-- Dynamically populated -->
+            </div>
+
+            <!-- Floating Card Input with Subtle Glow Border -->
+            <div class="relative bg-obsidian-card border border-obsidian-border rounded-2xl p-2.5 shadow-[0_4px_25px_rgba(0,0,0,0.5)] focus-within:border-obsidian-cyan/60 focus-within:shadow-[0_0_20px_rgba(34,211,238,0.15)] transition-all">
               
-              <!-- Attached Files Chips Row -->
-              <div id="attachedFilesContainer" class="hidden flex-wrap gap-1.5 pb-2 border-b border-obsidian-border/40 mb-2"></div>
-
-              <!-- Textarea Auto-Growing -->
+              <!-- Auto-expanding Textarea -->
               <textarea
                 id="aiPromptInput"
                 rows="1"
-                placeholder="Ask Areos AI anything..."
+                placeholder="Ask about markets, portfolio risk, or startup screening..."
                 class="w-full bg-transparent text-xs sm:text-sm text-obsidian-textPrimary placeholder-obsidian-textSecondary focus:outline-none resize-none font-sans leading-relaxed max-h-36"
               ></textarea>
 
@@ -158,23 +184,22 @@ export const AIIntelligencePage = {
                     <i class="ph ph-plus text-lg"></i>
                   </button>
 
+                  <!-- Hidden Real File Input -->
+                  <input type="file" id="aiFileInput" accept="image/*,application/pdf" multiple class="hidden" />
+
                   <!-- Attach Popup Sheet -->
                   <div id="attachPopup" class="hidden absolute bottom-10 left-0 bg-obsidian-sidebar border border-obsidian-border rounded-xl p-2 shadow-2xl space-y-1 w-48 text-xs font-sans z-30">
-                    <button class="attach-opt-btn w-full px-2.5 py-1.5 rounded-lg hover:bg-obsidian-card text-left flex items-center space-x-2 text-obsidian-textPrimary" data-type="Portfolio Snapshot">
-                      <i class="ph ph-chart-pie-slice text-obsidian-cyan text-base"></i>
-                      <span>Portfolio Snapshot</span>
+                    <button class="attach-opt-btn w-full px-2.5 py-1.5 rounded-lg hover:bg-obsidian-card text-left flex items-center space-x-2 text-obsidian-textPrimary" data-type="upload">
+                      <i class="ph ph-file-text text-obsidian-cyan text-base"></i>
+                      <span>Upload Image / PDF</span>
                     </button>
-                    <button class="attach-opt-btn w-full px-2.5 py-1.5 rounded-lg hover:bg-obsidian-card text-left flex items-center space-x-2 text-obsidian-textPrimary" data-type="Market Chart">
-                      <i class="ph ph-image text-obsidian-aiPurple text-base"></i>
-                      <span>Photo / Chart</span>
+                    <button class="attach-opt-btn w-full px-2.5 py-1.5 rounded-lg hover:bg-obsidian-card text-left flex items-center space-x-2 text-obsidian-textPrimary" data-type="context-portfolio">
+                      <i class="ph ph-chart-pie-slice text-obsidian-aiPurple text-base"></i>
+                      <span>Attach Portfolio State</span>
                     </button>
-                    <button class="attach-opt-btn w-full px-2.5 py-1.5 rounded-lg hover:bg-obsidian-card text-left flex items-center space-x-2 text-obsidian-textPrimary" data-type="Financial File">
-                      <i class="ph ph-file-text text-obsidian-textSecondary text-base"></i>
-                      <span>File / Report</span>
-                    </button>
-                    <button class="attach-opt-btn w-full px-2.5 py-1.5 rounded-lg hover:bg-obsidian-card text-left flex items-center space-x-2 text-obsidian-textPrimary" data-type="Camera Scan">
-                      <i class="ph ph-camera text-obsidian-textSecondary text-base"></i>
-                      <span>Camera</span>
+                    <button class="attach-opt-btn w-full px-2.5 py-1.5 rounded-lg hover:bg-obsidian-card text-left flex items-center space-x-2 text-obsidian-textPrimary" data-type="context-markets">
+                      <i class="ph ph-chart-line-up text-obsidian-cyan text-base"></i>
+                      <span>Attach Market Ticker</span>
                     </button>
                   </div>
                 </div>
@@ -184,10 +209,10 @@ export const AIIntelligencePage = {
                   <button
                     id="btnChatAction"
                     type="button"
-                    class="w-8 h-8 rounded-full flex items-center justify-center transition-all active:scale-95"
+                    class="w-8 h-8 rounded-full flex items-center justify-center transition-all active:scale-95 text-obsidian-textSecondary hover:text-obsidian-cyan"
                     title="Voice input"
                   >
-                    <i id="chatActionIcon" class="ph ph-microphone text-lg text-obsidian-textSecondary hover:text-obsidian-cyan"></i>
+                    <i id="chatActionIcon" class="ph ph-microphone text-lg"></i>
                   </button>
                 </div>
               </div>
@@ -195,7 +220,7 @@ export const AIIntelligencePage = {
 
             <!-- Disclaimer Under Input -->
             <div class="text-center text-[10px] text-obsidian-textSecondary/70 mt-1.5 select-none font-sans">
-              Areos AI can make mistakes. Verify important financial information.
+              Areos AI is a conversational market intelligence co-pilot. Not licensed financial advice.
             </div>
           </div>
         </div>
@@ -248,13 +273,13 @@ export const AIIntelligencePage = {
               <span class="text-[10px] font-mono uppercase px-2 py-0.5 rounded bg-obsidian-cyan/10 text-obsidian-cyan border border-obsidian-cyan/20 font-semibold">Opportunity Scanner</span>
               <span class="text-[10px] font-mono text-obsidian-cyan">12 Matches</span>
             </div>
-            <h3 class="text-sm font-semibold text-obsidian-textPrimary font-sans">12 Venture Deals Matched</h3>
+            <h3 class="text-sm font-semibold text-obsidian-textPrimary font-sans">Venture Dealflow Qualified</h3>
             <p class="text-xs text-obsidian-textSecondary leading-relaxed">
-              12 quantum hardware, post-quantum encryption and synthetic biology startups match your institutional growth parameters with a mean projected Sharpe of 2.65.
+              12 institutional-grade early-stage startups screened this cycle with high quantitative validation scores (QuantumFlux 96, NeuroQubits 94).
             </p>
             <div class="pt-2 border-t border-obsidian-border/50 flex items-center justify-between">
-              <span class="text-[10px] font-mono text-obsidian-textSecondary">Screened in 0.4s • High Precision</span>
-              <button class="btn-ask-insight px-2.5 py-1 rounded bg-obsidian-bg border border-obsidian-border hover:border-obsidian-cyan text-obsidian-cyan text-[11px] font-medium flex items-center space-x-1" data-query="Give me a deep dive on the 12 matched venture deals">
+              <span class="text-[10px] font-mono text-obsidian-textSecondary">Database: Areos Venture Engine</span>
+              <button class="btn-ask-insight px-2.5 py-1 rounded bg-obsidian-bg border border-obsidian-border hover:border-obsidian-cyan text-obsidian-cyan text-[11px] font-medium flex items-center space-x-1" data-query="Give me a venture briefing on the top early-stage deals">
                 <span>Ask AI</span>
                 <i class="ph ph-arrow-up-right text-xs"></i>
               </button>
@@ -264,38 +289,37 @@ export const AIIntelligencePage = {
 
       </div>
 
-      <!-- 3. SLIDE-IN HISTORY DRAWER -->
-      <div id="aiHistoryDrawerBackdrop" class="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 hidden transition-opacity duration-200 opacity-0 flex">
-        <div id="aiHistoryDrawerPanel" class="w-4/5 max-w-[320px] h-full bg-obsidian-sidebar border-r border-obsidian-border flex flex-col transform -translate-x-full transition-transform duration-200 ease-out shadow-2xl pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
-          
-          <!-- History Header -->
-          <div class="h-14 px-4 border-b border-obsidian-border flex items-center justify-between flex-shrink-0">
+      <!-- Slide-Over Left History Drawer -->
+      <div id="aiHistoryDrawerBackdrop" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-40 transition-opacity duration-200 opacity-0 flex">
+        <div id="aiHistoryDrawerPanel" class="w-80 max-w-[85vw] h-full bg-obsidian-sidebar border-r border-obsidian-border shadow-2xl flex flex-col transform -translate-x-full transition-transform duration-200">
+          <!-- Drawer Header -->
+          <div class="p-3.5 border-b border-obsidian-border flex items-center justify-between">
             <div class="flex items-center space-x-2">
-              <i class="ph ph-clock-counter-clockwise text-lg text-obsidian-aiPurple"></i>
-              <span class="text-sm font-bold text-obsidian-textPrimary font-sans">Chat History</span>
+              <i class="ph ph-clock-counter-clockwise text-obsidian-cyan text-lg"></i>
+              <span class="font-bold text-sm font-sans text-obsidian-textPrimary">Chat History</span>
             </div>
-            <button id="btnCloseHistoryDrawer" class="w-8 h-8 rounded-lg flex items-center justify-center text-obsidian-textSecondary hover:text-obsidian-textPrimary">
-              <i class="ph ph-x text-lg"></i>
+            <button id="btnCloseHistoryDrawer" class="w-8 h-8 rounded-lg flex items-center justify-center text-obsidian-textSecondary hover:text-obsidian-textPrimary hover:bg-obsidian-card">
+              <i class="ph ph-x text-base"></i>
             </button>
           </div>
 
-          <!-- New Chat Action Button in Drawer -->
-          <div class="p-3 border-b border-obsidian-border/60">
-            <button id="btnDrawerNewChat" class="w-full min-h-[44px] rounded-xl bg-obsidian-card border border-obsidian-border hover:border-obsidian-cyan/50 text-obsidian-textPrimary hover:text-obsidian-cyan text-xs font-semibold flex items-center justify-center space-x-2 active:scale-95 transition-all">
-              <i class="ph ph-note-pencil text-base text-obsidian-cyan"></i>
-              <span>New Conversation</span>
+          <!-- Drawer Action: New Chat -->
+          <div class="p-3 border-b border-obsidian-border/50">
+            <button id="btnDrawerNewChat" class="w-full py-2 px-3 rounded-xl bg-obsidian-card border border-obsidian-border hover:border-obsidian-cyan/50 text-obsidian-textPrimary text-xs font-medium flex items-center justify-center space-x-2 active:scale-95 transition-all">
+              <i class="ph ph-plus text-obsidian-cyan"></i>
+              <span>Start New Conversation</span>
             </button>
           </div>
 
-          <!-- Search History Input -->
-          <div class="px-3 py-2 border-b border-obsidian-border/40">
+          <!-- Search History -->
+          <div class="px-3 pt-2">
             <div class="relative flex items-center">
-              <i class="ph ph-magnifying-glass text-xs text-obsidian-textSecondary absolute left-2.5 pointer-events-none"></i>
+              <i class="ph ph-magnifying-glass text-xs text-obsidian-textSecondary absolute left-3 pointer-events-none"></i>
               <input
                 type="text"
                 id="historySearchInput"
                 placeholder="Search history..."
-                class="w-full h-8 bg-obsidian-card border border-obsidian-border rounded-lg pl-7 pr-3 text-[11px] text-obsidian-textPrimary placeholder-obsidian-textSecondary focus:border-obsidian-cyan focus:outline-none font-sans"
+                class="w-full h-8 bg-obsidian-bg border border-obsidian-border rounded-lg pl-8 pr-3 text-xs text-obsidian-textPrimary placeholder-obsidian-textSecondary focus:border-obsidian-cyan focus:outline-none"
               />
             </div>
           </div>
@@ -378,13 +402,23 @@ export const AIIntelligencePage = {
             <div class="max-w-[85%] sm:max-w-[80%]">
               <div class="bg-obsidian-cyan/15 border border-obsidian-cyan/30 text-obsidian-textPrimary rounded-2xl rounded-tr-sm px-4 py-2.5 text-xs sm:text-sm leading-relaxed whitespace-pre-wrap font-sans shadow-md">
                 ${m.content}
+                ${m.attachments && m.attachments.length > 0 ? `
+                  <div class="flex flex-wrap gap-1 mt-2 pt-2 border-t border-obsidian-cyan/20">
+                    ${m.attachments.map(att => `
+                      <span class="text-[10px] font-mono text-obsidian-cyan bg-obsidian-bg/80 px-2 py-0.5 rounded flex items-center space-x-1">
+                        <i class="ph ph-paperclip"></i>
+                        <span>${att.name || 'attachment'}</span>
+                      </span>
+                    `).join('')}
+                  </div>
+                ` : ''}
               </div>
               <div class="text-[9px] font-mono text-obsidian-textSecondary mt-1 text-right">${timeStr}</div>
             </div>
           </div>
           `;
         } else if (m.role === 'assistant') {
-          const parsed = parseMarkdown(m.content);
+          const parsed = parseMarkdown(m.content || '');
           const isLatest = idx === conv.messages.length - 1;
 
           html += `
@@ -400,8 +434,8 @@ export const AIIntelligencePage = {
                 ${parsed}
               </div>
 
-              <!-- Message Actions Row: Copy, ThumbsUp, ThumbsDown, ArrowsClockwise -->
-              <div class="flex items-center space-x-3 mt-2 text-obsidian-textSecondary text-xs">
+              <!-- Message Actions Row: Copy, ThumbsUp, ThumbsDown, Regenerate -->
+              <div class="flex items-center space-x-3 mt-2.5 text-obsidian-textSecondary text-xs">
                 <button class="btn-msg-copy hover:text-obsidian-cyan flex items-center space-x-1 active:scale-95 transition-all" data-msg-idx="${idx}" title="Copy message">
                   <i class="ph ph-copy text-sm"></i>
                   <span class="text-[10px] font-mono">Copy</span>
@@ -417,41 +451,55 @@ export const AIIntelligencePage = {
                 </button>
               </div>
 
-              <!-- 2-3 Follow-up Suggestion Chips after Latest Reply -->
-              ${isLatest && !this.isReplying ? `
+              <!-- Dynamic Follow-up Suggestion Chips after Latest Reply -->
+              ${isLatest && !this.isReplying && m.followups && m.followups.length > 0 ? `
                 <div class="flex flex-wrap gap-1.5 mt-3 pt-2 border-t border-obsidian-border/30">
-                  <button class="ai-followup-chip px-2.5 py-1 rounded-full bg-obsidian-card border border-obsidian-border hover:border-obsidian-cyan text-[11px] font-sans text-obsidian-textSecondary hover:text-obsidian-cyan active:scale-95 transition-all" data-prompt="Run a 10% market stress test">
-                    Run a 10% market stress test
-                  </button>
-                  <button class="ai-followup-chip px-2.5 py-1 rounded-full bg-obsidian-card border border-obsidian-border hover:border-obsidian-cyan text-[11px] font-sans text-obsidian-textSecondary hover:text-obsidian-cyan active:scale-95 transition-all" data-prompt="What hedging strategies apply here?">
-                    What hedging strategies apply?
-                  </button>
+                  ${m.followups.map(chip => `
+                    <button class="ai-followup-chip px-2.5 py-1 rounded-full bg-obsidian-card border border-obsidian-border hover:border-obsidian-cyan text-[11px] font-sans text-obsidian-textSecondary hover:text-obsidian-cyan active:scale-95 transition-all" data-prompt="${chip}">
+                      ${chip}
+                    </button>
+                  `).join('')}
                 </div>
               ` : ''}
             </div>
           </div>
           `;
         } else if (m.role === 'error') {
+          // CLEAR INLINE OFFLINE ERROR STATE WITH RETRY
           html += `
           <div class="flex items-start space-x-2.5 mb-4 animate-fadeIn">
             <div class="w-6 h-6 rounded-md bg-obsidian-negative/15 border border-obsidian-negative/30 flex items-center justify-center text-obsidian-negative flex-shrink-0 mt-0.5">
               <i class="ph ph-warning-circle text-xs"></i>
             </div>
-            <div class="flex-1 bg-obsidian-card border border-obsidian-negative/40 rounded-xl p-3 text-xs">
-              <div class="text-obsidian-negative font-semibold font-sans mb-1">Inference Notice</div>
-              <div class="text-obsidian-textSecondary">${m.content}</div>
-              <button class="btn-retry-inference mt-2.5 px-3 py-1 rounded-lg bg-obsidian-negative/20 border border-obsidian-negative/40 text-obsidian-negative hover:bg-obsidian-negative/30 text-[11px] font-mono font-semibold flex items-center space-x-1 active:scale-95 transition-all" data-msg-idx="${idx}">
-                <i class="ph ph-arrows-clockwise text-xs"></i>
-                <span>Retry</span>
-              </button>
+            <div class="flex-1 bg-obsidian-card border border-obsidian-negative/40 rounded-xl p-3 text-xs space-y-2">
+              <div class="flex items-center justify-between">
+                <span class="text-obsidian-negative font-semibold font-sans text-xs">Areos AI is offline</span>
+                <span class="text-[9px] font-mono text-obsidian-textSecondary px-1.5 py-0.5 rounded bg-obsidian-bg border border-obsidian-border">API Error</span>
+              </div>
+              <div class="text-obsidian-textSecondary leading-relaxed">${m.content}</div>
+              <div class="pt-1">
+                <button class="btn-retry-inference px-3 py-1 rounded-lg bg-obsidian-negative/20 border border-obsidian-negative/40 text-obsidian-negative hover:bg-obsidian-negative/30 text-[11px] font-mono font-semibold flex items-center space-x-1 active:scale-95 transition-all" data-msg-idx="${idx}">
+                  <i class="ph ph-arrows-clockwise text-xs"></i>
+                  <span>Retry</span>
+                </button>
+              </div>
             </div>
           </div>
           `;
         }
       });
 
-      // Typing / Thinking Indicator
+      // Tool status chip ("Using portfolio data...") & Typing Indicator
       if (this.isReplying) {
+        if (this.activeStatusMessage) {
+          html += `
+          <div class="flex items-center space-x-2 px-3 py-1 rounded-full bg-obsidian-card border border-obsidian-aiPurple/40 text-[11px] font-mono text-obsidian-aiPurple w-fit mb-2 animate-fadeIn">
+            <i class="ph ph-gear animate-spin text-sm"></i>
+            <span>${this.activeStatusMessage}</span>
+          </div>
+          `;
+        }
+
         html += `
         <div id="aiTypingIndicator" class="flex items-start space-x-2.5 mb-4 animate-fadeIn">
           <div class="w-6 h-6 rounded-md bg-obsidian-aiPurple/15 border border-obsidian-aiPurple/30 flex items-center justify-center text-obsidian-aiPurple flex-shrink-0 mt-0.5">
@@ -495,11 +543,16 @@ export const AIIntelligencePage = {
 
     if (this.isReplying) {
       // STOP BUTTON
-      btn.className = 'w-8 h-8 rounded-full bg-obsidian-negative text-white flex items-center justify-center hover:opacity-90 active:scale-95 transition-all';
+      btn.className = 'w-8 h-8 rounded-full bg-obsidian-negative text-white flex items-center justify-center hover:opacity-90 active:scale-95 transition-all shadow-md';
       icon.className = 'ph-fill ph-stop text-sm';
       btn.title = 'Stop generating';
+    } else if (this.isRecordingVoice) {
+      // RECORDING ACTIVE PULSE
+      btn.className = 'w-8 h-8 rounded-full bg-obsidian-negative text-white flex items-center justify-center animate-pulse';
+      icon.className = 'ph-fill ph-microphone text-base';
+      btn.title = 'Listening... click to finish';
     } else {
-      const hasText = input && input.value.trim().length > 0;
+      const hasText = (input && input.value.trim().length > 0) || this.attachedFiles.length > 0;
       if (hasText) {
         // CYAN SEND BUTTON
         btn.className = 'w-8 h-8 rounded-full bg-obsidian-cyan text-black flex items-center justify-center hover:bg-obsidian-brightCyan active:scale-95 transition-all shadow-md';
@@ -514,28 +567,118 @@ export const AIIntelligencePage = {
     }
   },
 
-  // Send a prompt
+  // Real SpeechRecognition handler
+  startVoiceInput() {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      Toast.show('Speech recognition is not supported in this browser.');
+      return;
+    }
+
+    if (this.recognition && this.isRecordingVoice) {
+      this.recognition.stop();
+      return;
+    }
+
+    try {
+      const recognition = new SpeechRecognition();
+      recognition.lang = 'en-US';
+      recognition.interimResults = true;
+      recognition.continuous = false;
+      this.recognition = recognition;
+      this.isRecordingVoice = true;
+      this.updateChatActionButton();
+      Toast.show('Listening... Speak into your microphone.');
+
+      recognition.onresult = (event) => {
+        const transcript = Array.from(event.results)
+          .map(r => r[0].transcript)
+          .join('');
+        const input = document.getElementById('aiPromptInput');
+        if (input) {
+          input.value = transcript;
+          input.style.height = 'auto';
+          input.style.height = Math.min(input.scrollHeight, 140) + 'px';
+          this.updateChatActionButton();
+        }
+      };
+
+      recognition.onerror = (event) => {
+        console.warn('SpeechRecognition error:', event.error);
+        if (event.error !== 'no-speech') {
+          Toast.show(`Voice input: ${event.error}`);
+        }
+        this.stopVoiceInput();
+      };
+
+      recognition.onend = () => {
+        this.stopVoiceInput();
+      };
+
+      recognition.start();
+    } catch (err) {
+      console.warn('Could not start voice recognition:', err);
+      Toast.show('Microphone unavailable or blocked.');
+      this.stopVoiceInput();
+    }
+  },
+
+  stopVoiceInput() {
+    if (this.recognition) {
+      try { this.recognition.stop(); } catch {}
+      this.recognition = null;
+    }
+    this.isRecordingVoice = false;
+    this.updateChatActionButton();
+  },
+
+  // Render attachment chips
+  renderAttachedChips() {
+    const container = document.getElementById('attachedFilesContainer');
+    if (!container) return;
+
+    if (this.attachedFiles.length === 0) {
+      container.classList.add('hidden');
+      container.innerHTML = '';
+      this.updateChatActionButton();
+      return;
+    }
+
+    container.classList.remove('hidden');
+    container.innerHTML = this.attachedFiles.map((file, idx) => `
+      <span class="inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-full bg-obsidian-card border border-obsidian-cyan/30 text-[10px] font-mono text-obsidian-cyan">
+        <i class="ph ph-paperclip text-xs"></i>
+        <span>${file.name}</span>
+        <button class="btn-remove-attach text-obsidian-textSecondary hover:text-obsidian-negative ml-0.5" data-idx="${idx}">
+          <i class="ph ph-x text-xs"></i>
+        </button>
+      </span>
+    `).join('');
+
+    this.updateChatActionButton();
+  },
+
+  // Main Send Message Handler
   async handleSendPrompt(text) {
-    if (!text || this.isReplying) return;
+    if ((!text && this.attachedFiles.length === 0) || this.isReplying) return;
 
     const conv = this.getActiveConversation();
+    const isFirstMessage = !conv.messages || conv.messages.length === 0;
 
-    // If first message in conversation, set meaningful title
-    if (!conv.messages || conv.messages.length === 0) {
-      conv.title = text.length > 28 ? text.slice(0, 28) + '...' : text;
+    // Generate meaningful conversation title from the first message
+    if (isFirstMessage) {
+      const cleanTitle = (text || 'Market Analysis').trim().replace(/^[#\*\s]+/, '');
+      conv.title = cleanTitle.length > 28 ? cleanTitle.slice(0, 28) + '...' : cleanTitle;
     }
 
-    // Attach any attached files into prompt context
-    let finalPrompt = text;
-    if (this.attachedFiles.length > 0) {
-      finalPrompt = `[Attached Context: ${this.attachedFiles.join(', ')}]\n\n${text}`;
-      this.attachedFiles = [];
-      this.renderAttachedChips();
-    }
+    const currentAttachments = [...this.attachedFiles];
+    this.attachedFiles = [];
+    this.renderAttachedChips();
 
     conv.messages.push({
       role: 'user',
-      content: finalPrompt,
+      content: text || 'Analyze attached context',
+      attachments: currentAttachments,
       timestamp: Date.now()
     });
     conv.updatedAt = Date.now();
@@ -549,33 +692,42 @@ export const AIIntelligencePage = {
     }
 
     this.isReplying = true;
+    this.activeStatusMessage = null;
     this.abortController = new AbortController();
     this.renderActiveView();
 
-    // Create placeholder AI message for streaming
+    // Placeholder AI message for streaming
     const aiMsg = {
       role: 'assistant',
       content: '',
+      followups: [],
       timestamp: Date.now()
     };
     conv.messages.push(aiMsg);
     const aiMsgIdx = conv.messages.length - 1;
 
+    const selectedModel = localStorage.getItem('areos_selected_model') || 'gemini-2.0-flash';
+    const isDemoMode = localStorage.getItem('areos_demo_mode') === 'true';
+
     try {
-      await sendMessage(
-        conv.messages.filter(m => m.role === 'user' || m.role === 'assistant'),
-        {
-          portfolioValue: '$48,281.42',
-          sentiment: 'Bullish (78/100)',
-          riskScore: 'Moderate (42/100)',
-          holdings: 'NVDA, AAPL, VOO, BTC'
-        },
-        (chunkText) => {
-          conv.messages[aiMsgIdx].content = chunkText;
+      await sendMessage({
+        messages: conv.messages.filter(m => m.role === 'user' || m.role === 'assistant'),
+        model: selectedModel,
+        demoMode: isDemoMode,
+        onStatus: (statusMessage) => {
+          this.activeStatusMessage = statusMessage;
           this.renderActiveView();
         },
-        this.abortController.signal
-      );
+        onChunk: (accumulatedText) => {
+          this.activeStatusMessage = null; // Text arrived, clear tool pill
+          conv.messages[aiMsgIdx].content = accumulatedText;
+          this.renderActiveView();
+        },
+        onFollowups: (followupList) => {
+          conv.messages[aiMsgIdx].followups = followupList;
+        },
+        signal: this.abortController.signal
+      });
     } catch (err) {
       if (err.name === 'AbortError') {
         Toast.show('Inference stopped by user.');
@@ -583,14 +735,16 @@ export const AIIntelligencePage = {
           conv.messages.splice(aiMsgIdx, 1);
         }
       } else {
+        // RENDER REAL OFFLINE ERROR STATE (NO FAKE TEMPLATE)
         conv.messages[aiMsgIdx] = {
           role: 'error',
-          content: err.message || 'Connection error while communicating with AI Engine.',
+          content: err.message || 'Areos AI is offline. Unable to establish connection to AI proxy.',
           timestamp: Date.now()
         };
       }
     } finally {
       this.isReplying = false;
+      this.activeStatusMessage = null;
       this.abortController = null;
       conv.updatedAt = Date.now();
       this.saveConversations();
@@ -598,29 +752,7 @@ export const AIIntelligencePage = {
     }
   },
 
-  renderAttachedChips() {
-    const container = document.getElementById('attachedFilesContainer');
-    if (!container) return;
-
-    if (this.attachedFiles.length === 0) {
-      container.classList.add('hidden');
-      container.innerHTML = '';
-      return;
-    }
-
-    container.classList.remove('hidden');
-    container.innerHTML = this.attachedFiles.map((file, idx) => `
-      <span class="inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-full bg-obsidian-bg border border-obsidian-cyan/30 text-[10px] font-mono text-obsidian-cyan">
-        <i class="ph ph-file-text text-xs"></i>
-        <span>${file}</span>
-        <button class="btn-remove-attach text-obsidian-textSecondary hover:text-obsidian-negative ml-0.5" data-idx="${idx}">
-          <i class="ph ph-x text-xs"></i>
-        </button>
-      </span>
-    `).join('');
-  },
-
-  // Render History Drawer List with Groups: Today / Yesterday / Previous 7 days / Older
+  // Render History Drawer List
   renderHistoryDrawer() {
     const listEl = document.getElementById('historyConversationsList');
     if (!listEl) return;
@@ -689,7 +821,7 @@ export const AIIntelligencePage = {
     }
 
     if (!html) {
-      html = `<div class="py-8 text-center text-xs font-mono text-obsidian-textSecondary">No conversations yet</div>`;
+      html = `<div class="py-8 text-center text-xs font-mono text-obsidian-textSecondary">No conversations found</div>`;
     }
 
     listEl.innerHTML = html;
@@ -734,6 +866,7 @@ export const AIIntelligencePage = {
     const input = document.getElementById('aiPromptInput');
     const btnAction = document.getElementById('btnChatAction');
     const btnAttach = document.getElementById('btnAttachMenu');
+    const fileInput = document.getElementById('aiFileInput');
     const attachPopup = document.getElementById('attachPopup');
     const scrollEl = document.getElementById('aiScrollArea');
     const btnScrollToBottom = document.getElementById('btnScrollToBottom');
@@ -747,8 +880,8 @@ export const AIIntelligencePage = {
     if (tabChat && tabInsights) {
       tabChat.addEventListener('click', () => {
         this.currentTab = 'chat';
-        tabChat.className = 'px-4 py-1 rounded-lg bg-obsidian-bg text-obsidian-cyan shadow-sm border border-obsidian-border transition-all';
-        tabInsights.className = 'px-4 py-1 rounded-lg text-obsidian-textSecondary hover:text-obsidian-textPrimary transition-all';
+        tabChat.className = 'px-3.5 py-1 rounded-lg bg-obsidian-bg text-obsidian-cyan shadow-sm border border-obsidian-border transition-all';
+        tabInsights.className = 'px-3.5 py-1 rounded-lg text-obsidian-textSecondary hover:text-obsidian-textPrimary transition-all';
         viewChat?.classList.remove('hidden');
         viewChat?.classList.add('flex');
         viewInsights?.classList.add('hidden');
@@ -758,8 +891,8 @@ export const AIIntelligencePage = {
 
       tabInsights.addEventListener('click', () => {
         this.currentTab = 'insights';
-        tabInsights.className = 'px-4 py-1 rounded-lg bg-obsidian-bg text-obsidian-cyan shadow-sm border border-obsidian-border transition-all';
-        tabChat.className = 'px-4 py-1 rounded-lg text-obsidian-textSecondary hover:text-obsidian-textPrimary transition-all';
+        tabInsights.className = 'px-3.5 py-1 rounded-lg bg-obsidian-bg text-obsidian-cyan shadow-sm border border-obsidian-border transition-all';
+        tabChat.className = 'px-3.5 py-1 rounded-lg text-obsidian-textSecondary hover:text-obsidian-textPrimary transition-all';
         viewInsights?.classList.remove('hidden');
         viewInsights?.classList.add('flex');
         viewChat?.classList.add('hidden');
@@ -779,15 +912,11 @@ export const AIIntelligencePage = {
       const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
       input.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') {
-          if (isMobile) {
-            // Mobile: Enter = new line
-            return;
-          }
+          if (isMobile) return;
           if (!e.shiftKey) {
-            // Desktop: Enter = send
             e.preventDefault();
             const text = input.value.trim();
-            if (text) {
+            if (text || this.attachedFiles.length > 0) {
               this.handleSendPrompt(text);
             }
           }
@@ -806,12 +935,14 @@ export const AIIntelligencePage = {
       btnAction.addEventListener('click', () => {
         if (this.isReplying) {
           if (this.abortController) this.abortController.abort();
+        } else if (this.isRecordingVoice) {
+          this.stopVoiceInput();
         } else {
           const text = input ? input.value.trim() : '';
-          if (text) {
+          if (text || this.attachedFiles.length > 0) {
             this.handleSendPrompt(text);
           } else {
-            Toast.show('Voice input: Listening... (Simulated microphone)');
+            this.startVoiceInput();
           }
         }
       });
@@ -834,14 +965,62 @@ export const AIIntelligencePage = {
       document.querySelectorAll('.attach-opt-btn').forEach(btn => {
         btn.addEventListener('click', () => {
           const type = btn.getAttribute('data-type');
-          if (type) {
-            this.attachedFiles.push(type);
+          attachPopup.classList.add('hidden');
+
+          if (type === 'upload') {
+            fileInput?.click();
+          } else if (type === 'context-portfolio') {
+            this.attachedFiles.push({
+              name: 'portfolio_state.json',
+              mimeType: 'application/json',
+              base64: btoa(JSON.stringify({ value: '$48,281.42', sharpe: 2.48, holdings: ['NVDA', 'AAPL', 'VOO', 'BTC'] }))
+            });
             this.renderAttachedChips();
-            attachPopup.classList.add('hidden');
-            Toast.show(`Attached: ${type}`);
-            if (input) input.focus();
+            Toast.show('Attached portfolio context snapshot.');
+          } else if (type === 'context-markets') {
+            this.attachedFiles.push({
+              name: 'market_indices.json',
+              mimeType: 'application/json',
+              base64: btoa(JSON.stringify({ SP500: '5842.10', NIFTY: '25182.40', NASDAQ: '18340.65' }))
+            });
+            this.renderAttachedChips();
+            Toast.show('Attached market indices snapshot.');
           }
         });
+      });
+    }
+
+    // Real File Input Change (Base64 file reader)
+    if (fileInput) {
+      fileInput.addEventListener('change', async (e) => {
+        const files = Array.from(e.target.files || []);
+        for (const file of files) {
+          try {
+            const base64Data = await new Promise((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onload = () => {
+                const res = reader.result;
+                const base64 = typeof res === 'string' ? res.split(',')[1] : '';
+                resolve(base64);
+              };
+              reader.onerror = reject;
+              reader.readAsDataURL(file);
+            });
+
+            this.attachedFiles.push({
+              name: file.name,
+              size: file.size,
+              mimeType: file.type || 'application/octet-stream',
+              base64: base64Data
+            });
+            Toast.show(`Uploaded: ${file.name}`);
+          } catch (err) {
+            console.error('File read error:', err);
+            Toast.show(`Failed to read file ${file.name}`);
+          }
+        }
+        fileInput.value = '';
+        this.renderAttachedChips();
       });
     }
 
@@ -860,6 +1039,12 @@ export const AIIntelligencePage = {
         this.scrollToBottom(true);
       });
     }
+
+    // Header buttons
+    const btnOpenHistory = document.getElementById('btnOpenHistoryDrawer');
+    const btnNewChat = document.getElementById('btnHeaderNewChat');
+    if (btnOpenHistory) btnOpenHistory.addEventListener('click', () => this.openHistoryDrawer());
+    if (btnNewChat) btnNewChat.addEventListener('click', () => this.startNewChat());
 
     // History Drawer listeners
     const btnCloseHistory = document.getElementById('btnCloseHistoryDrawer');
@@ -918,7 +1103,7 @@ export const AIIntelligencePage = {
         const idx = parseInt(copyBtn.getAttribute('data-msg-idx'), 10);
         const conv = this.getActiveConversation();
         if (conv.messages[idx]) {
-          navigator.clipboard.writeText(conv.messages[idx].content);
+          navigator.clipboard.writeText(conv.messages[idx].content || '');
           Toast.show('AI response copied to clipboard.');
         }
         return;
@@ -950,7 +1135,7 @@ export const AIIntelligencePage = {
         return;
       }
 
-      // 7. Retry Inference
+      // 7. Retry Inference on Error
       const retryBtn = e.target.closest('.btn-retry-inference');
       if (retryBtn) {
         const conv = this.getActiveConversation();

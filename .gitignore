@@ -28,3 +28,4 @@ debug.keystore
 node_modules/
 __pycache__/
 .venv/
+Areos-AI/
